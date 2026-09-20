@@ -383,3 +383,74 @@ label.full input {
   display: flex;
   gap: 10px;
 }
+
+.check-result {
+  padding: 10px 12px;
+  border: 1px solid var(--warn-line);
+  border-radius: 6px;
+  background: var(--warn-bg);
+  font-size: 12.5px;
+  max-width: 720px;
+}
+
+.check-result ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.check-result .check-error {
+  color: var(--danger);
+}
+
+.check-result .check-warn {
+  color: #8a5a00;
+}
+
+.precheck {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f9fafc;
+  font-size: 12.5px;
+}
+
+.precheck-hint {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+
+.precheck-hint.warn {
+  color: #8a5a00;
+}
+
+.precheck-lists {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.precheck-group {
+  flex: 1;
+  min-width: 240px;
+}
+
+.precheck-group h3 {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.precheck-group ul {
+  margin: 0;
+  padding-left: 18px;
+  max-height: 120px;
+  overflow: auto;
+}
+
+.precheck-none {
+  list-style: none;
+  margin-left: -18px;
+  color: var(--ink-soft);
+}

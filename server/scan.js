@@ -1,4 +1,5 @@
-const { load, LEVELS, STATUSES } = require('./store');
+const crypto = require('crypto');
+const { load, save, LEVELS, STATUSES } = require('./store');
 const { ApiError, pickText } = require('./errors');
 
 // 一条规则管不管这个文件：适用文件类型写成全部的管所有文件，否则只认同类型的
@@ -11,9 +12,13 @@ function levelOrder(level) {
   return index === -1 ? LEVELS.length : index;
 }
 
-// 扫一遍：启用的规则逐条去比对范围内的文件，命中记到具体行上
-function scan(options) {
-  const input = options && typeof options === 'object' ? options : {};
+// 内容指纹：扫前检查靠它判断上次扫描之后内容有没有被改过
+function hashContent(content) {
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+// 这一轮要扫哪些文件、用哪些规则：扫描与扫前检查共用同一套口径，两边结论才不会漂移
+function resolveScope(input) {
   const level = pickText(input.level);
   const fileId = pickText(input.fileId);
   const ruleId = pickText(input.ruleId);
@@ -46,6 +51,16 @@ function scan(options) {
     .filter((item) => !level || item.level === level);
 
   const filesInScope = scopeFile ? [scopeFile] : data.files;
+
+  return { data, enabled, warning, rulesUsed, filesInScope };
+}
+
+// 扫一遍：启用的规则逐条去比对范围内的文件，命中记到具体行上。
+// 扫完给范围内的文件记下足迹（扫的时刻与当时内容的指纹），
+// 扫前检查据此分辨刚收录还没扫过的与上次扫描之后被改过的
+function scan(options) {
+  const input = options && typeof options === 'object' ? options : {};
+  const { data, enabled, warning, rulesUsed, filesInScope } = resolveScope(input);
 
   const hits = [];
   rulesUsed.forEach((rule) => {
@@ -95,8 +110,15 @@ function scan(options) {
     byFileMap.get(key).count += 1;
   });
 
+  const scannedAt = new Date().toISOString();
+  filesInScope.forEach((file) => {
+    file.lastScannedAt = scannedAt;
+    file.lastScannedHash = hashContent(file.content);
+  });
+  save(data);
+
   return {
-    scannedAt: new Date().toISOString(),
+    scannedAt,
     enabledRules: enabled.length,
     rulesUsed: rulesUsed.length,
     filesInScope: filesInScope.length,
@@ -113,4 +135,39 @@ function scan(options) {
   };
 }
 
-module.exports = { scan, ruleAppliesToFile, levelOrder };
+// 扫前检查：把范围内刚收录还没扫过的、上次扫描之后内容被改过的文件列出来。
+// 只读不写，也不取当前时间，同样的数据跑多少次结论都一样
+function precheck(options) {
+  const input = options && typeof options === 'object' ? options : {};
+  const { filesInScope } = resolveScope(input);
+
+  const byPath = (a, b) => {
+    if (a.path !== b.path) return a.path < b.path ? -1 : 1;
+    return a.id < b.id ? -1 : 1;
+  };
+  const unscanned = filesInScope
+    .filter((file) => !file.lastScannedAt)
+    .map((file) => ({ id: file.id, path: file.path }))
+    .sort(byPath);
+  const changed = filesInScope
+    .filter((file) => file.lastScannedAt && hashContent(file.content) !== file.lastScannedHash)
+    .map((file) => ({ id: file.id, path: file.path }))
+    .sort(byPath);
+
+  let hint = '范围里的文件都扫过一遍且之后没改过，这一轮的命中可以与上一轮对比。';
+  if (unscanned.length || changed.length) {
+    const parts = [];
+    if (unscanned.length) parts.push(`${unscanned.length} 个文件刚收录还没扫过`);
+    if (changed.length) parts.push(`${changed.length} 个文件在上次扫描之后被改过`);
+    hint = `这一轮范围里有 ${parts.join('、')}，这一轮的命中会因此与上一轮不可比。`;
+  }
+
+  return {
+    filesInScope: filesInScope.length,
+    unscanned,
+    changed,
+    hint,
+  };
+}
+
+module.exports = { scan, precheck, ruleAppliesToFile, levelOrder };

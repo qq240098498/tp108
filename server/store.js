@@ -316,7 +316,8 @@ function normalizeRule(item, fallbackIndex) {
   };
 }
 
-// 把单个文件整理成固定结构，类型不在清单里的一律从路径后缀推断
+// 把单个文件整理成固定结构，类型不在清单里的一律从路径后缀推断；
+// 扫描足迹（上次扫它的时刻与当时内容的指纹）缺省为空，表示还没扫过
 function normalizeFile(item, fallbackIndex) {
   const source = item && typeof item === 'object' ? item : {};
   const createdAt = typeof source.createdAt === 'string' && source.createdAt ? source.createdAt : new Date().toISOString();
@@ -332,6 +333,8 @@ function normalizeFile(item, fallbackIndex) {
     note: typeof source.note === 'string' ? source.note : '',
     createdAt,
     updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : createdAt,
+    lastScannedAt: typeof source.lastScannedAt === 'string' && source.lastScannedAt ? source.lastScannedAt : null,
+    lastScannedHash: typeof source.lastScannedHash === 'string' && source.lastScannedHash ? source.lastScannedHash : null,
   };
 }
 

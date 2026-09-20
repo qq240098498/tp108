@@ -272,6 +272,7 @@ function openFileForm(file) {
   el('file-path').value = file ? file.path : '';
   el('file-content').value = file ? file.content : '';
   el('file-note').value = file ? file.note : '';
+  clearFileCheck();
   el('file-form').classList.remove('hidden');
   el('file-path').focus();
 }
@@ -279,7 +280,29 @@ function openFileForm(file) {
 function closeFileForm() {
   state.editingFileId = '';
   el('file-form').classList.add('hidden');
+  clearFileCheck();
   clearFieldMarks();
+}
+
+// 收录前的成组校验结果：错误与提醒分开着色，列在表单里
+function renderFileCheck(check) {
+  const box = el('file-check-result');
+  const errors = (check && check.errors) || [];
+  const warnings = (check && check.warnings) || [];
+  if (!errors.length && !warnings.length) {
+    clearFileCheck();
+    return;
+  }
+  const items = errors.map((item) => `<li class="check-error">${escapeHtml(item.message)}</li>`)
+    .concat(warnings.map((item) => `<li class="check-warn">${escapeHtml(item.message)}</li>`));
+  box.innerHTML = `<ul>${items.join('')}</ul>`;
+  box.classList.remove('hidden');
+}
+
+function clearFileCheck() {
+  const box = el('file-check-result');
+  box.classList.add('hidden');
+  box.innerHTML = '';
 }
 
 async function showFileContent(id) {
@@ -334,6 +357,26 @@ async function submitFile(event) {
     note: el('file-note').value,
   };
   const editing = state.editingFileId;
+  // 保存前先过一遍成组校验：硬问题直接拦下，疑似贴错的地方提示后由人定夺
+  try {
+    const check = await request('/api/files/check', {
+      method: 'POST',
+      body: JSON.stringify({ id: editing || undefined, path: payload.path, content: payload.content }),
+    });
+    renderFileCheck(check);
+    if (check.errors.length) {
+      notify(check.errors[0].message, 'error');
+      check.errors.forEach((item) => markField(item.field));
+      return;
+    }
+    if (check.warnings.length) {
+      const lines = check.warnings.map((item) => `· ${item.message}`).join('\n');
+      if (!window.confirm(`${lines}\n\n仍要保存吗？`)) return;
+    }
+  } catch (err) {
+    notify(err.message, 'error');
+    return;
+  }
   try {
     if (editing) {
       await request(`/api/files/${encodeURIComponent(editing)}`, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -350,7 +393,36 @@ async function submitFile(event) {
   }
 }
 
-// 扫一遍，把概要与命中清单都画出来
+// 扫前检查：把范围内刚收录没扫过的与上次扫描后改过的文件列出来，只提示不改数据
+async function runPrecheck() {
+  const body = {
+    ruleId: el('scan-rule').value,
+    fileId: el('scan-file').value,
+    level: el('scan-level').value,
+  };
+  const result = await request('/api/scan/precheck', { method: 'POST', body: JSON.stringify(body) });
+  renderPrecheck(result);
+}
+
+function renderPrecheckList(listId, titleId, title, items) {
+  el(titleId).textContent = `${title}（${items.length}）`;
+  el(listId).innerHTML = items.length
+    ? items.map((item) => `<li class="mono">${escapeHtml(item.path)}</li>`).join('')
+    : '<li class="precheck-none">没有</li>';
+}
+
+function renderPrecheck(result) {
+  const unscanned = result.unscanned || [];
+  const changed = result.changed || [];
+  el('scan-precheck').classList.remove('hidden');
+  const hint = el('precheck-hint');
+  hint.textContent = result.hint;
+  hint.classList.toggle('warn', unscanned.length + changed.length > 0);
+  renderPrecheckList('precheck-unscanned', 'precheck-unscanned-title', '刚收录还没扫过', unscanned);
+  renderPrecheckList('precheck-changed', 'precheck-changed-title', '上次扫描后改过', changed);
+}
+
+// 扫一遍，把概要与命中清单都画出来；扫描之前先过一道扫前检查
 async function runScan() {
   clearNotice();
   const body = {
@@ -359,6 +431,7 @@ async function runScan() {
     level: el('scan-level').value,
   };
   try {
+    await runPrecheck();
     const result = await request('/api/scan', { method: 'POST', body: JSON.stringify(body) });
     state.lastScan = result;
     renderScan(result);
@@ -505,6 +578,10 @@ el('file-filter-reset').addEventListener('click', () => {
   loadFiles().catch((err) => notify(err.message, 'error'));
 });
 el('scan-run').addEventListener('click', runScan);
+el('precheck-run').addEventListener('click', () => {
+  clearNotice();
+  runPrecheck().catch((err) => notify(err.message, 'error'));
+});
 el('rule-filter-level').addEventListener('change', () => {
   loadRules().catch((err) => notify(err.message, 'error'));
 });

@@ -69,6 +69,15 @@ app.post('/api/files', (req, res) => {
   }
 });
 
+// 收录前的成组校验：只列出问题，不改数据
+app.post('/api/files/check', (req, res) => {
+  try {
+    res.json(api.checkFile(req.body));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 app.get('/api/files/:id', (req, res) => {
   try {
     res.json(api.getFile(req.params.id));
@@ -98,6 +107,20 @@ app.post('/api/scan', (req, res) => {
   try {
     const body = req.body && typeof req.body === 'object' ? req.body : {};
     res.json(api.scan({
+      level: body.level,
+      fileId: body.fileId,
+      ruleId: body.ruleId,
+    }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
+// 扫前检查：列出范围内刚收录没扫过的与上次扫描后改过的文件，只提示不改数据
+app.post('/api/scan/precheck', (req, res) => {
+  try {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    res.json(api.precheck({
       level: body.level,
       fileId: body.fileId,
       ruleId: body.ruleId,

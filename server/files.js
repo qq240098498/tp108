@@ -52,6 +52,81 @@ function lineCountOf(content) {
   return content.split('\n').length;
 }
 
+// 说明文字里常见的句读标点，脚本与配置里基本不会出现
+const PROSE_PUNCT = /[。，、；：！？]/;
+
+// 行数翻到这个倍数并且多出的绝对行数也够多，才认为贴进来的内容多得离谱
+const LINE_JUMP_RATIO = 3;
+const LINE_JUMP_MIN_EXTRA = 20;
+
+function commentPrefixesOf(type) {
+  if (type === 'js') return ['//', '/*', '*', '*/'];
+  return ['#'];
+}
+
+// 数一下内容里有多少行像说明文字：先去掉注释行与空行，再看剩下的行有没有中文句读标点
+function proseLineCount(content, type) {
+  const prefixes = commentPrefixesOf(type);
+  const lines = content.split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !prefixes.some((prefix) => line.startsWith(prefix)));
+  const prose = lines.filter((line) => PROSE_PUNCT.test(line));
+  return { total: lines.length, prose: prose.length };
+}
+
+// 收录前的成组校验：把路径、后缀、内容与明显贴错的地方一次都查一遍。
+// 只把问题列出来，不改任何数据；响应完全由输入与当前数据决定，跑多少次结论都一样
+function checkFile(payload) {
+  const input = payload && typeof payload === 'object' ? payload : {};
+  const data = load();
+  const selfId = pickText(input.id);
+  const errors = [];
+  const warnings = [];
+
+  let filePath = '';
+  try {
+    filePath = validatePath(input.path, data, selfId);
+  } catch (err) {
+    errors.push({ code: err.code, message: err.message, field: err.field });
+  }
+
+  let content = '';
+  try {
+    content = validateContent(input.content);
+  } catch (err) {
+    errors.push({ code: err.code, message: err.message, field: err.field });
+  }
+
+  if (filePath && content) {
+    const type = extensionOf(filePath);
+    // 文档本来就写说明文字，脚本与配置里成片出现句读标点才可疑
+    if (type !== 'md') {
+      const stat = proseLineCount(content, type);
+      if (stat.prose >= 2 && stat.prose * 5 >= stat.total * 2) {
+        warnings.push({
+          code: 'CONTENT_LOOKS_PROSE',
+          message: `内容里有 ${stat.prose} 行像说明文字（有效内容共 ${stat.total} 行），可能把整段说明当成脚本贴进来了`,
+          field: 'content',
+        });
+      }
+    }
+    const existing = selfId ? data.files.find((item) => item.id === selfId) : null;
+    if (existing) {
+      const before = lineCountOf(existing.content);
+      const after = lineCountOf(content);
+      if (after > before * LINE_JUMP_RATIO && after - before >= LINE_JUMP_MIN_EXTRA) {
+        warnings.push({
+          code: 'CONTENT_LINES_JUMPED',
+          message: `原来 ${before} 行，现在 ${after} 行，一下子多出太多，可能把别的内容一起贴进来了`,
+          field: 'content',
+        });
+      }
+    }
+  }
+
+  return { errors, warnings };
+}
+
 function withMeta(file) {
   return { ...file, lineCount: lineCountOf(file.content) };
 }
@@ -140,5 +215,6 @@ module.exports = {
   createFile,
   updateFile,
   deleteFile,
+  checkFile,
   lineCountOf,
 };
