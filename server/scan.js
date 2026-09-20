@@ -1,4 +1,4 @@
-const { load, LEVELS, STATUSES } = require('./store');
+const { load, save, LEVELS, STATUSES } = require('./store');
 const { ApiError, pickText } = require('./errors');
 
 // 一条规则管不管这个文件：适用文件类型写成全部的管所有文件，否则只认同类型的
@@ -95,8 +95,19 @@ function scan(options) {
     byFileMap.get(key).count += 1;
   });
 
+  // 扫成了才记扫描记录：范围内的文件各自记下这一轮被扫到的时刻，
+  // 已经移出清单的文件顺手从记录里清掉；扫描前检查只靠这份记录出结论
+  const scannedAt = new Date().toISOString();
+  const currentIds = new Set(data.files.map((item) => item.id));
+  filesInScope.forEach((file) => { data.meta.fileScannedAt[file.id] = scannedAt; });
+  Object.keys(data.meta.fileScannedAt).forEach((id) => {
+    if (!currentIds.has(id)) delete data.meta.fileScannedAt[id];
+  });
+  data.meta.lastScanAt = scannedAt;
+  save(data);
+
   return {
-    scannedAt: new Date().toISOString(),
+    scannedAt,
     enabledRules: enabled.length,
     rulesUsed: rulesUsed.length,
     filesInScope: filesInScope.length,
@@ -113,4 +124,61 @@ function scan(options) {
   };
 }
 
-module.exports = { scan, ruleAppliesToFile, levelOrder };
+// 扫描前检查：只读不写，同样的数据跑多少次结论都一样。
+// 范围与扫描一致（指定 fileId 就只看那一个文件），把范围里刚收录还没扫过的、
+// 以及上次扫描之后内容被改过的文件分别列出来，并说明这一轮与上一轮是否可比
+function precheck(options) {
+  const input = options && typeof options === 'object' ? options : {};
+  const fileId = pickText(input.fileId);
+  const data = load();
+
+  let filesInScope = data.files;
+  if (fileId) {
+    const scopeFile = data.files.find((item) => item.id === fileId);
+    if (!scopeFile) throw new ApiError(404, 'FILE_NOT_FOUND', '选中的文件不在清单里', 'scanFile');
+    filesInScope = [scopeFile];
+  }
+
+  const scanned = data.meta.fileScannedAt || {};
+  const hasBaseline = Object.keys(scanned).length > 0;
+
+  const newFiles = [];
+  const modifiedFiles = [];
+  if (hasBaseline) {
+    filesInScope.forEach((file) => {
+      const at = scanned[file.id];
+      if (!at) {
+        newFiles.push({ id: file.id, path: file.path, at: file.createdAt });
+      } else if (file.contentUpdatedAt > at) {
+        modifiedFiles.push({ id: file.id, path: file.path, at: file.contentUpdatedAt });
+      }
+    });
+  }
+  const byPath = (a, b) => (a.path < b.path ? -1 : 1);
+  newFiles.sort(byPath);
+  modifiedFiles.sort(byPath);
+
+  const comparable = hasBaseline && newFiles.length === 0 && modifiedFiles.length === 0;
+  let notice;
+  if (!hasBaseline) {
+    notice = '还没有任何一轮扫描记录，这一轮将作为第一轮，不存在与上一轮比较的问题';
+  } else if (!comparable) {
+    notice = `范围里有 ${newFiles.length} 个文件刚收录还没扫过、${modifiedFiles.length} 个文件在上次扫描后内容有改动，这一轮的命中与上一轮不可比`;
+  } else {
+    notice = '范围里的文件自上次扫描以来都没有变化，这一轮的命中可以与上一轮直接比较';
+  }
+
+  return {
+    lastScanAt: data.meta.lastScanAt,
+    filesInScope: filesInScope.length,
+    filesTotal: data.files.length,
+    newCount: newFiles.length,
+    modifiedCount: modifiedFiles.length,
+    comparable,
+    notice,
+    newFiles,
+    modifiedFiles,
+  };
+}
+
+module.exports = { scan, precheck, ruleAppliesToFile, levelOrder };

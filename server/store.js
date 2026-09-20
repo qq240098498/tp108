@@ -317,6 +317,7 @@ function normalizeRule(item, fallbackIndex) {
 }
 
 // 把单个文件整理成固定结构，类型不在清单里的一律从路径后缀推断
+// contentUpdatedAt 只在路径或内容真的变了的时候才往前走，旧数据缺这个字段时回落到 updatedAt
 function normalizeFile(item, fallbackIndex) {
   const source = item && typeof item === 'object' ? item : {};
   const createdAt = typeof source.createdAt === 'string' && source.createdAt ? source.createdAt : new Date().toISOString();
@@ -324,6 +325,7 @@ function normalizeFile(item, fallbackIndex) {
   const ext = filePath.includes('.') ? filePath.split('.').pop().toLowerCase() : '';
   const type = FILE_TYPES.includes(source.type) && source.type !== '全部' ? source.type : (FILE_TYPES.includes(ext) ? ext : 'js');
   const content = typeof source.content === 'string' ? source.content : '';
+  const updatedAt = typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : createdAt;
   return {
     id: typeof source.id === 'string' && source.id ? source.id : `file-restored-${fallbackIndex + 1}`,
     path: filePath,
@@ -331,14 +333,32 @@ function normalizeFile(item, fallbackIndex) {
     content,
     note: typeof source.note === 'string' ? source.note : '',
     createdAt,
-    updatedAt: typeof source.updatedAt === 'string' && source.updatedAt ? source.updatedAt : createdAt,
+    updatedAt,
+    contentUpdatedAt: typeof source.contentUpdatedAt === 'string' && source.contentUpdatedAt ? source.contentUpdatedAt : updatedAt,
+  };
+}
+
+// 扫描记录：lastScanAt 是最近一轮扫描的时刻，fileScannedAt 按文件记下它最近一次被扫到的时刻
+// 扫描前检查只读这份记录，不写；记录本身只由扫描动作维护
+function normalizeMeta(item) {
+  const source = item && typeof item === 'object' ? item : {};
+  const fileScannedAt = {};
+  if (source.fileScannedAt && typeof source.fileScannedAt === 'object') {
+    Object.keys(source.fileScannedAt).forEach((id) => {
+      const at = source.fileScannedAt[id];
+      if (typeof id === 'string' && id && typeof at === 'string' && at) fileScannedAt[id] = at;
+    });
+  }
+  return {
+    lastScanAt: typeof source.lastScanAt === 'string' && source.lastScanAt ? source.lastScanAt : null,
+    fileScannedAt,
   };
 }
 
 // 整份数据保证规则与文件结构一致，缺编号、缺名称、缺路径的条目一律丢掉
 function normalize(raw) {
   const source = raw && typeof raw === 'object' ? raw : {};
-  const seed = { rules: seedRules(), files: seedFiles() };
+  const seed = { rules: seedRules(), files: seedFiles(), meta: { lastScanAt: null, fileScannedAt: {} } };
 
   const rawRules = Array.isArray(source.rules) ? source.rules : seed.rules;
   const seenRuleIds = new Set();
@@ -368,7 +388,7 @@ function normalize(raw) {
     files.push(file);
   });
 
-  return { rules, files };
+  return { rules, files, meta: normalizeMeta(source.meta) };
 }
 
 // 读取数据文件：文件缺失或内容损坏时回落到初始数据并立刻补写
@@ -377,7 +397,7 @@ function load() {
     const raw = fs.readFileSync(DATA_FILE, 'utf8');
     return normalize(JSON.parse(raw));
   } catch (err) {
-    const data = { rules: seedRules(), files: seedFiles() };
+    const data = { rules: seedRules(), files: seedFiles(), meta: { lastScanAt: null, fileScannedAt: {} } };
     save(data);
     return data;
   }
@@ -399,6 +419,7 @@ module.exports = {
   normalize,
   normalizeRule,
   normalizeFile,
+  normalizeMeta,
   LEVELS,
   STATUSES,
   FILE_TYPES,

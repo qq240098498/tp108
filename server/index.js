@@ -93,6 +93,17 @@ app.delete('/api/files/:id', (req, res) => {
   }
 });
 
+// 扫描前检查：只读，列出本轮范围里刚收录还没扫过与上次扫描后内容有改动的文件
+app.get('/api/scan/precheck', (req, res) => {
+  try {
+    res.json(api.precheck({
+      fileId: api.readQuery(req.query, 'fileId'),
+    }));
+  } catch (err) {
+    sendError(res, err);
+  }
+});
+
 // 扫一遍：可以只扫某一条规则、某一个文件，也可以只留某个级别
 app.post('/api/scan', (req, res) => {
   try {
@@ -112,12 +123,12 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ error: { code: 'API_NOT_FOUND', message: '接口不存在', field: '' } });
 });
 
-// 统一错误出口：业务异常按状态码与错误码返回，其余按服务异常处理
+// 统一错误出口：业务异常按状态码与错误码返回，成组校验的问题清单一并带回，其余按服务异常处理
 function sendError(res, err) {
   if (err instanceof api.ApiError) {
-    return res.status(err.status).json({
-      error: { code: err.code, message: err.message, field: err.field },
-    });
+    const error = { code: err.code, message: err.message, field: err.field };
+    if (err.problems) error.problems = err.problems;
+    return res.status(err.status).json({ error });
   }
   console.error('[tp108] 处理请求时出现未预期的问题：', err);
   return res.status(500).json({

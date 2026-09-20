@@ -133,10 +133,25 @@
           <select id="scan-rule"><option value="">全部规则</option></select>
           <select id="scan-file"><option value="">全部文件</option></select>
           <select id="scan-level"><option value="">全部级别</option></select>
+          <button type="button" id="scan-precheck" class="ghost">扫描前检查</button>
           <button type="button" id="scan-run">按规则扫一遍</button>
         </div>
       </div>
       <p class="scan-meta" id="scan-meta">还没有扫过，点右上角扫一遍</p>
+      <div class="precheck hidden" id="precheck">
+        <p class="precheck-notice" id="precheck-notice"></p>
+        <p class="precheck-meta" id="precheck-meta"></p>
+        <div class="precheck-groups">
+          <div class="precheck-group">
+            <h4 id="precheck-new-title">刚收录还没扫过（0 个）</h4>
+            <ul id="precheck-new"></ul>
+          </div>
+          <div class="precheck-group">
+            <h4 id="precheck-modified-title">上次扫描后内容有改动（0 个）</h4>
+            <ul id="precheck-modified"></ul>
+          </div>
+        </div>
+      </div>
       <p class="scan-warning hidden" id="scan-warning"></p>
       <div class="summary hidden" id="scan-summary"></div>
       <div class="table-wrap">

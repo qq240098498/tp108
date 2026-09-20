@@ -33,6 +33,7 @@ async function request(path, options) {
     const failure = new Error(error.message || `请求失败（状态码 ${res.status}）`);
     failure.code = error.code || '';
     failure.field = error.field || '';
+    failure.problems = Array.isArray(error.problems) ? error.problems : null;
     throw failure;
   }
   return payload;
@@ -42,6 +43,13 @@ function notify(message, kind) {
   const box = el('notice');
   box.textContent = message;
   box.className = `notice ${kind === 'ok' ? 'ok' : 'error'}`;
+}
+
+// 成组校验没过关时，把每一处问题逐条列出来，方便对着改
+function notifyProblems(message, problems) {
+  const box = el('notice');
+  box.innerHTML = `${escapeHtml(message)}<ul class="problem-list">${problems.map((item) => `<li>${escapeHtml(item.message)}</li>`).join('')}</ul>`;
+  box.className = 'notice error';
 }
 
 function clearNotice() {
@@ -294,6 +302,17 @@ async function showFileContent(id) {
   }
 }
 
+// 提交失败：有成组问题就逐条列出、把每个出错项都标红，否则按单个错误处理
+function showSubmitFailure(err) {
+  if (err.problems && err.problems.length) {
+    notifyProblems(err.message, err.problems);
+    err.problems.forEach((item) => markField(item.field));
+  } else {
+    notify(err.message, 'error');
+    markField(err.field);
+  }
+}
+
 async function submitRule(event) {
   event.preventDefault();
   clearNotice();
@@ -319,8 +338,7 @@ async function submitRule(event) {
     closeRuleForm();
     await loadRules();
   } catch (err) {
-    notify(err.message, 'error');
-    markField(err.field);
+    showSubmitFailure(err);
   }
 }
 
@@ -345,9 +363,43 @@ async function submitFile(event) {
     closeFileForm();
     await loadFiles();
   } catch (err) {
-    notify(err.message, 'error');
-    markField(err.field);
+    showSubmitFailure(err);
   }
+}
+
+// 扫描前检查：只读，把本轮范围里刚收录还没扫过、上次扫描后内容有改动的文件列出来
+async function runPrecheck() {
+  clearNotice();
+  const params = new URLSearchParams();
+  const fileId = el('scan-file').value;
+  if (fileId) params.set('fileId', fileId);
+  const query = params.toString();
+  try {
+    const result = await request(`/api/scan/precheck${query ? `?${query}` : ''}`);
+    renderPrecheck(result);
+  } catch (err) {
+    notify(err.message, 'error');
+  }
+}
+
+function renderPrecheck(result) {
+  const panel = el('precheck');
+  panel.classList.remove('ok', 'warn');
+  if (result.lastScanAt) panel.classList.add(result.comparable ? 'ok' : 'warn');
+
+  el('precheck-notice').textContent = result.notice;
+  el('precheck-meta').textContent = (result.lastScanAt ? `上次扫描 ${formatTime(result.lastScanAt)}　` : '')
+    + `本轮范围里的文件 ${result.filesInScope} 个（清单共 ${result.filesTotal} 个）`;
+  el('precheck-new-title').textContent = `刚收录还没扫过（${result.newCount} 个）`;
+  el('precheck-modified-title').textContent = `上次扫描后内容有改动（${result.modifiedCount} 个）`;
+
+  const renderList = (items) => (items.length
+    ? items.map((item) => `<li><span class="mono">${escapeHtml(item.path)}</span><span class="precheck-time">${escapeHtml(formatTime(item.at))}</span></li>`).join('')
+    : '<li class="precheck-none">没有</li>');
+  el('precheck-new').innerHTML = renderList(result.newFiles);
+  el('precheck-modified').innerHTML = renderList(result.modifiedFiles);
+
+  panel.classList.remove('hidden');
 }
 
 // 扫一遍，把概要与命中清单都画出来
@@ -362,6 +414,8 @@ async function runScan() {
     const result = await request('/api/scan', { method: 'POST', body: JSON.stringify(body) });
     state.lastScan = result;
     renderScan(result);
+    // 扫完之后基线已经更新，旧的检查结论作废，面板先收起来
+    el('precheck').classList.add('hidden');
   } catch (err) {
     notify(err.message, 'error');
   }
@@ -505,6 +559,7 @@ el('file-filter-reset').addEventListener('click', () => {
   loadFiles().catch((err) => notify(err.message, 'error'));
 });
 el('scan-run').addEventListener('click', runScan);
+el('scan-precheck').addEventListener('click', runPrecheck);
 el('rule-filter-level').addEventListener('change', () => {
   loadRules().catch((err) => notify(err.message, 'error'));
 });

@@ -315,6 +315,86 @@ td.actions {
   margin-top: 4px;
 }
 
+.precheck {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f9fafc;
+  font-size: 12.5px;
+}
+
+.precheck.warn {
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+}
+
+.precheck.ok {
+  border-color: #b7ddc9;
+  background: #eefaf3;
+}
+
+.precheck-notice {
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+
+.precheck.warn .precheck-notice {
+  color: #8a5a00;
+}
+
+.precheck.ok .precheck-notice {
+  color: var(--ok);
+}
+
+.precheck-meta {
+  margin: 0 0 8px;
+  color: var(--ink-soft);
+}
+
+.precheck-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+}
+
+.precheck-group h4 {
+  margin: 0 0 4px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.precheck-group ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.precheck-group li {
+  line-height: 1.7;
+}
+
+.precheck-time {
+  margin-left: 8px;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+}
+
+.precheck-none {
+  margin-left: -18px;
+  color: var(--ink-soft);
+  list-style: none;
+}
+
+.problem-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.problem-list li {
+  line-height: 1.7;
+}
+
 .content-preview {
   margin: 12px 0 0;
   padding: 12px;
